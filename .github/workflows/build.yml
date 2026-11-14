@@ -1,0 +1,53 @@
+﻿name: Build and Test Renewal App
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build-and-test:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Build solution
+        run: dotnet build RefactoringRenewalExample.sln --configuration Release
+
+      - name: Run consumer and verify output
+        shell: pwsh
+        run: |
+          $output = & dotnet run --project ./LegacyRenewalAppConsumer --configuration Release --no-build 2>&1
+          $output | ForEach-Object { Write-Host $_ }
+
+          if ($LASTEXITCODE -ne 0) {
+            throw "Consumer execution failed."
+          }
+
+          $text = $output | Out-String
+
+          $expected = @(
+            "Invoice created successfully",
+            "Final amount: 17671.67",
+            "platinum discount;",
+            "long-term loyalty discount;",
+            "small team discount;",
+            "loyalty points used: 200;",
+            "premium support included;",
+            "card payment fee;"
+          )
+
+          foreach ($item in $expected) {
+            if (-not $text.Contains($item)) {
+              throw "Expected output missing: $item"
+            }
+          }
+
+          Write-Host "All output checks passed!"
