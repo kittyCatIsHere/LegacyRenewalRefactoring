@@ -5,11 +5,67 @@ namespace LegacyRenewalApp
 {
     public class SubscriptionRenewalService
     {
+        private readonly RenewalValidator _validator;
+        private readonly CustomerRepository _customerRepository;
+        private readonly SubscriptionPlanRepository _planRepository;
+        private readonly DiscountCalculator _discountCalculator;
+        private readonly FeeCalculator _feeCalculator;
+        private readonly TaxCalculator _taxCalculator;
+        private readonly InvoiceFactory _invoiceFactory;
         private readonly IBillingGateway _billingGateway;
 
         public SubscriptionRenewalService()
+            : this(RenewalDependencies.CreateDefault())
         {
-            _billingGateway = new LegacyBillingGatewayAdapter();
+        }
+
+        private SubscriptionRenewalService(
+            RenewalDependencies dependencies)
+            : this(
+                dependencies.Validator,
+                dependencies.CustomerRepository,
+                dependencies.PlanRepository,
+                dependencies.DiscountCalculator,
+                dependencies.FeeCalculator,
+                dependencies.TaxCalculator,
+                dependencies.InvoiceFactory,
+                dependencies.BillingGateway)
+        {
+        }
+
+        public SubscriptionRenewalService(
+            RenewalValidator validator,
+            CustomerRepository customerRepository,
+            SubscriptionPlanRepository planRepository,
+            DiscountCalculator discountCalculator,
+            FeeCalculator feeCalculator,
+            TaxCalculator taxCalculator,
+            InvoiceFactory invoiceFactory,
+            IBillingGateway billingGateway)
+        {
+            _validator = validator
+                ?? throw new ArgumentNullException(nameof(validator));
+
+            _customerRepository = customerRepository
+                ?? throw new ArgumentNullException(nameof(customerRepository));
+
+            _planRepository = planRepository
+                ?? throw new ArgumentNullException(nameof(planRepository));
+
+            _discountCalculator = discountCalculator
+                ?? throw new ArgumentNullException(nameof(discountCalculator));
+
+            _feeCalculator = feeCalculator
+                ?? throw new ArgumentNullException(nameof(feeCalculator));
+
+            _taxCalculator = taxCalculator
+                ?? throw new ArgumentNullException(nameof(taxCalculator));
+
+            _invoiceFactory = invoiceFactory
+                ?? throw new ArgumentNullException(nameof(invoiceFactory));
+
+            _billingGateway = billingGateway
+                ?? throw new ArgumentNullException(nameof(billingGateway));
         }
 
         public RenewalInvoice CreateRenewalInvoice(
@@ -20,28 +76,20 @@ namespace LegacyRenewalApp
             bool includePremiumSupport,
             bool useLoyaltyPoints)
         {
-            // Step 1: Validate input
-            var validator = new RenewalValidator();
-
-            validator.Validate(
+            _validator.Validate(
                 customerId,
                 planCode,
                 seatCount,
                 paymentMethod);
 
-            // Step 2: Normalize input
             string normalizedPlanCode =
                 planCode.Trim().ToUpperInvariant();
 
             string normalizedPaymentMethod =
                 paymentMethod.Trim().ToUpperInvariant();
 
-            // Step 3: Load customer and plan
-            var customerRepository = new CustomerRepository();
-            var planRepository = new SubscriptionPlanRepository();
-
-            var customer = customerRepository.GetById(customerId);
-            var plan = planRepository.GetByCode(normalizedPlanCode);
+            var customer = _customerRepository.GetById(customerId);
+            var plan = _planRepository.GetByCode(normalizedPlanCode);
 
             if (!customer.IsActive)
             {
@@ -49,15 +97,11 @@ namespace LegacyRenewalApp
                     "Inactive customers cannot renew subscriptions");
             }
 
-            // Step 4: Calculate base amount
             decimal baseAmount =
                 (plan.MonthlyPricePerSeat * seatCount * 12m)
                 + plan.SetupFee;
 
-            // Step 5: Calculate discounts
-            var discountCalculator = new DiscountCalculator();
-
-            var discountResult = discountCalculator.Calculate(
+            var discountResult = _discountCalculator.Calculate(
                 customer,
                 plan,
                 seatCount,
@@ -67,7 +111,6 @@ namespace LegacyRenewalApp
             decimal discountAmount = discountResult.Amount;
             string notes = discountResult.Notes;
 
-            // Step 6: Apply minimum discounted subtotal
             decimal subtotalAfterDiscount =
                 baseAmount - discountAmount;
 
@@ -77,18 +120,14 @@ namespace LegacyRenewalApp
                 notes += "minimum discounted subtotal applied; ";
             }
 
-            // Step 7: Calculate premium support fee
-            var feeCalculator = new FeeCalculator();
-
-            var supportResult = feeCalculator.CalculateSupportFee(
+            var supportResult = _feeCalculator.CalculateSupportFee(
                 normalizedPlanCode,
                 includePremiumSupport);
 
             decimal supportFee = supportResult.Amount;
             notes += supportResult.Notes;
 
-            // Step 8: Calculate payment fee
-            var paymentResult = feeCalculator.CalculatePaymentFee(
+            var paymentResult = _feeCalculator.CalculatePaymentFee(
                 normalizedPaymentMethod,
                 subtotalAfterDiscount,
                 supportFee);
@@ -96,29 +135,22 @@ namespace LegacyRenewalApp
             decimal paymentFee = paymentResult.Amount;
             notes += paymentResult.Notes;
 
-            // Step 9: Calculate tax
-            var taxCalculator = new TaxCalculator();
-
             decimal taxBase =
                 subtotalAfterDiscount + supportFee + paymentFee;
 
-            decimal taxAmount = taxCalculator.CalculateTax(
+            decimal taxAmount = _taxCalculator.CalculateTax(
                 customer.Country,
                 taxBase);
 
             decimal finalAmount = taxBase + taxAmount;
 
-            // Step 10: Apply minimum invoice amount
             if (finalAmount < 500m)
             {
                 finalAmount = 500m;
                 notes += "minimum invoice amount applied; ";
             }
 
-            // Step 11: Create invoice
-            var invoiceFactory = new InvoiceFactory();
-
-            RenewalInvoice invoice = invoiceFactory.Create(
+            RenewalInvoice invoice = _invoiceFactory.Create(
                 customerId,
                 customer,
                 normalizedPlanCode,
@@ -132,10 +164,8 @@ namespace LegacyRenewalApp
                 finalAmount,
                 notes);
 
-            // Step 12: Save invoice through abstraction
             _billingGateway.SaveInvoice(invoice);
 
-            // Step 13: Send email through abstraction
             if (!string.IsNullOrWhiteSpace(customer.Email))
             {
                 string subject = "Subscription renewal invoice";
