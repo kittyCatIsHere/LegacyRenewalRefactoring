@@ -5,6 +5,13 @@ namespace LegacyRenewalApp
 {
     public class SubscriptionRenewalService
     {
+        private readonly IBillingGateway _billingGateway;
+
+        public SubscriptionRenewalService()
+        {
+            _billingGateway = new LegacyBillingGatewayAdapter();
+        }
+
         public RenewalInvoice CreateRenewalInvoice(
             int customerId,
             string planCode,
@@ -70,7 +77,7 @@ namespace LegacyRenewalApp
                 notes += "minimum discounted subtotal applied; ";
             }
 
-            // Step 7: Calculate support fee
+            // Step 7: Calculate premium support fee
             var feeCalculator = new FeeCalculator();
 
             var supportResult = feeCalculator.CalculateSupportFee(
@@ -108,7 +115,7 @@ namespace LegacyRenewalApp
                 notes += "minimum invoice amount applied; ";
             }
 
-            // Step 11: Create invoice using InvoiceFactory
+            // Step 11: Create invoice
             var invoiceFactory = new InvoiceFactory();
 
             RenewalInvoice invoice = invoiceFactory.Create(
@@ -125,10 +132,10 @@ namespace LegacyRenewalApp
                 finalAmount,
                 notes);
 
-            // Step 12: Save invoice
-            LegacyBillingGateway.SaveInvoice(invoice);
+            // Step 12: Save invoice through abstraction
+            _billingGateway.SaveInvoice(invoice);
 
-            // Step 13: Send email
+            // Step 13: Send email through abstraction
             if (!string.IsNullOrWhiteSpace(customer.Email))
             {
                 string subject = "Subscription renewal invoice";
@@ -137,7 +144,7 @@ namespace LegacyRenewalApp
                     $"Hello {customer.FullName}, your renewal for plan {normalizedPlanCode} " +
                     $"has been prepared. Final amount: {invoice.FinalAmount:F2}.";
 
-                LegacyBillingGateway.SendEmail(
+                _billingGateway.SendEmail(
                     customer.Email,
                     subject,
                     body);
