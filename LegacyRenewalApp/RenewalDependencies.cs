@@ -21,16 +21,33 @@ namespace LegacyRenewalApp
 
         public static RenewalDependencies CreateDefault()
         {
+            IPaymentFeeStrategy[] paymentStrategies =
+            {
+                new CardPaymentStrategy(),
+                new BankTransferPaymentStrategy(),
+                new PayPalPaymentStrategy(),
+                new InvoicePaymentStrategy()
+            };
+
             return new RenewalDependencies
             {
                 Validator = new RenewalValidator(),
+
                 CustomerRepository = new CustomerRepository(),
+
                 PlanRepository = new SubscriptionPlanRepository(),
+
                 DiscountCalculator = new DiscountCalculator(),
-                FeeCalculator = new FeeCalculator(),
+
+                FeeCalculator = new FeeCalculator(
+                    paymentStrategies),
+
                 TaxCalculator = new TaxCalculator(),
+
                 InvoiceFactory = new InvoiceFactory(),
-                BillingGateway = new LegacyBillingGatewayAdapter()
+
+                BillingGateway =
+                    new LegacyBillingGatewayAdapter()
             };
         }
     }
