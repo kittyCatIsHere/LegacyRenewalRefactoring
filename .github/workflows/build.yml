@@ -1,4 +1,5 @@
-﻿name: Build and Test Renewal App
+﻿
+name: Build and Test Renewal App
 
 on:
   push:
@@ -18,13 +19,20 @@ jobs:
         with:
           dotnet-version: '8.0.x'
 
+      - name: Restore dependencies
+        run: dotnet restore RefactoringRenewalExample.sln
+
       - name: Build solution
-        run: dotnet build RefactoringRenewalExample.sln --configuration Release
+        run: dotnet build RefactoringRenewalExample.sln --configuration Release --no-restore
+
+      - name: Run xUnit tests
+        run: dotnet test RefactoringRenewalExample.sln --configuration Release --no-build --verbosity normal
 
       - name: Run consumer and verify output
         shell: pwsh
         run: |
           $output = & dotnet run --project ./LegacyRenewalAppConsumer --configuration Release --no-build 2>&1
+
           $output | ForEach-Object { Write-Host $_ }
 
           if ($LASTEXITCODE -ne 0) {
